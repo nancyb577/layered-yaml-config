@@ -1,0 +1,143 @@
+// Package yamlconf parses a restricted, well-defined subset of YAML:
+// nested maps and scalar values (string, int, float, bool, null). It
+// exists so that reading simple config files doesn't require pulling in
+// a full YAML implementation as a dependency.
+//
+// Not supported (yet): lists, flow style ({}/[]), anchors and aliases,
+// multi-line strings, and multi-document files.
+package yamlconf
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+type rawLine struct {
+	num      int
+	indent   int
+	key      string
+	value    string
+	hasValue bool
+}
+
+// Parse reads r and returns the top-level map it describes.
+func Parse(r io.Reader) (map[string]interface{}, error) {
+	lines, err := readLines(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(lines) == 0 {
+		return map[string]interface{}{}, nil
+	}
+	i := 0
+	return parseBlock(lines, &i, lines[0].indent)
+}
+
+// ParseFile opens path and parses it with Parse.
+func ParseFile(path string) (map[string]interface{}, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return Parse(f)
+}
+
+func readLines(r io.Reader) ([]rawLine, error) {
+	var lines []rawLine
+	scanner := bufio.NewScanner(r)
+	num := 0
+	for scanner.Scan() {
+		num++
+		trimmed := strings.TrimRight(scanner.Text(), " \t")
+		if strings.TrimSpace(trimmed) == "" {
+			continue
+		}
+		content := strings.TrimLeft(trimmed, " ")
+		if strings.HasPrefix(content, "#") {
+			continue
+		}
+		if strings.HasPrefix(content, "\t") {
+			return nil, fmt.Errorf("line %d: tabs are not allowed for indentation", num)
+		}
+		indent := len(trimmed) - len(content)
+		idx := strings.Index(content, ":")
+		if idx == -1 {
+			return nil, fmt.Errorf("line %d: expected \"key: value\", got %q", num, content)
+		}
+		key := strings.TrimSpace(content[:idx])
+		if key == "" {
+			return nil, fmt.Errorf("line %d: empty key", num)
+		}
+		value := strings.TrimSpace(content[idx+1:])
+		lines = append(lines, rawLine{
+			num:      num,
+			indent:   indent,
+			key:      key,
+			value:    value,
+			hasValue: value != "",
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
+}
+
+// parseBlock consumes every consecutive line at exactly the given indent,
+// treating deeper indents as nested maps under the preceding key.
+func parseBlock(lines []rawLine, i *int, indent int) (map[string]interface{}, error) {
+	result := map[string]interface{}{}
+	for *i < len(lines) {
+		ln := lines[*i]
+		if ln.indent < indent {
+			break
+		}
+		if ln.indent > indent {
+			return nil, fmt.Errorf("line %d: unexpected indentation", ln.num)
+		}
+		*i++
+		if ln.hasValue {
+			result[ln.key] = parseScalar(ln.value)
+			continue
+		}
+		if *i >= len(lines) || lines[*i].indent <= indent {
+			result[ln.key] = map[string]interface{}{}
+			continue
+		}
+		child, err := parseBlock(lines, i, lines[*i].indent)
+		if err != nil {
+			return nil, err
+		}
+		result[ln.key] = child
+	}
+	return result, nil
+}
+
+func parseScalar(s string) interface{} {
+	if len(s) >= 2 {
+		quote := s[0]
+		if (quote == '"' || quote == '\'') && s[len(s)-1] == quote {
+			return s[1 : len(s)-1]
+		}
+	}
+	switch s {
+	case "null", "~":
+		return nil
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return f
+	}
+	return s
+}
