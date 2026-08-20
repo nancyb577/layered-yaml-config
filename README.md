@@ -24,14 +24,19 @@ service:
 database:
   host: db.internal
   password: "quoted because it has a colon: in it"
+cors_origins:
+  - https://example.com
+  - https://staging.example.com
 ```
 
 Keys are plain strings, indentation defines nesting (spaces only, no
 tabs), and scalar values are typed automatically as bool, int, float,
 null, or string. Lines starting with `#` and blank lines are ignored.
 
-Lists, flow-style `{}`/`[]`, anchors/aliases, and multi-line strings are
-not supported. If a file uses them, `Parse` returns an error rather than
+Lists are block-style only (`- value`, one per line, indented under the
+key) and hold scalars, not nested maps or lists. Flow-style `{}`/`[]`,
+lists of maps, anchors/aliases, and multi-line strings are not
+supported. If a file uses them, `Parse` returns an error rather than
 guessing.
 
 ## Library usage
@@ -85,6 +90,7 @@ $ go run ./cmd/yamlconf get config/base.yaml service.port
 
 ## Status
 
-This is early. The parser only handles the subset described above —
-notably, no lists yet, which rules out things like allow-lists or CORS
-origin arrays until that lands.
+This is early. The parser only handles the subset described above:
+maps, block-style scalar lists, and typed scalars. Inline comments after
+a value, quoted-string escape sequences, and env var interpolation
+(`${VAR}`) aren't handled yet.

@@ -45,14 +45,25 @@ func dumpMap(b *strings.Builder, m map[string]interface{}, depth int) {
 	prefix := strings.Repeat("  ", depth)
 	for _, k := range keys {
 		v := m[k]
-		if child, ok := v.(map[string]interface{}); ok {
+		switch val := v.(type) {
+		case map[string]interface{}:
 			fmt.Fprintf(b, "%s%s:\n", prefix, k)
-			if len(child) > 0 {
-				dumpMap(b, child, depth+1)
+			if len(val) > 0 {
+				dumpMap(b, val, depth+1)
 			}
-			continue
+		case []interface{}:
+			fmt.Fprintf(b, "%s%s:\n", prefix, k)
+			dumpList(b, val, depth+1)
+		default:
+			fmt.Fprintf(b, "%s%s: %s\n", prefix, k, formatScalar(v))
 		}
-		fmt.Fprintf(b, "%s%s: %s\n", prefix, k, formatScalar(v))
+	}
+}
+
+func dumpList(b *strings.Builder, items []interface{}, depth int) {
+	prefix := strings.Repeat("  ", depth)
+	for _, item := range items {
+		fmt.Fprintf(b, "%s- %s\n", prefix, formatScalar(item))
 	}
 }
 

@@ -1,10 +1,10 @@
 // Package yamlconf parses a restricted, well-defined subset of YAML:
-// nested maps and scalar values (string, int, float, bool, null). It
-// exists so that reading simple config files doesn't require pulling in
-// a full YAML implementation as a dependency.
+// nested maps, block-style lists of scalars, and scalar values (string,
+// int, float, bool, null). It exists so that reading simple config files
+// doesn't require pulling in a full YAML implementation as a dependency.
 //
-// Not supported (yet): lists, flow style ({}/[]), anchors and aliases,
-// multi-line strings, and multi-document files.
+// Not supported (yet): lists of maps, flow style ({}/[]), anchors and
+// aliases, multi-line strings, and multi-document files.
 package yamlconf
 
 import (
@@ -22,6 +22,7 @@ type rawLine struct {
 	key      string
 	value    string
 	hasValue bool
+	listItem bool
 }
 
 // Parse reads r and returns the top-level map it describes.
@@ -65,6 +66,17 @@ func readLines(r io.Reader) ([]rawLine, error) {
 			return nil, fmt.Errorf("line %d: tabs are not allowed for indentation", num)
 		}
 		indent := len(trimmed) - len(content)
+		if content == "-" || strings.HasPrefix(content, "- ") {
+			value := strings.TrimSpace(content[1:])
+			lines = append(lines, rawLine{
+				num:      num,
+				indent:   indent,
+				value:    value,
+				hasValue: value != "",
+				listItem: true,
+			})
+			continue
+		}
 		idx := strings.Index(content, ":")
 		if idx == -1 {
 			return nil, fmt.Errorf("line %d: expected \"key: value\", got %q", num, content)
@@ -100,6 +112,9 @@ func parseBlock(lines []rawLine, i *int, indent int) (map[string]interface{}, er
 		if ln.indent > indent {
 			return nil, fmt.Errorf("line %d: unexpected indentation", ln.num)
 		}
+		if ln.listItem {
+			return nil, fmt.Errorf("line %d: list item not under a key", ln.num)
+		}
 		*i++
 		if ln.hasValue {
 			result[ln.key] = parseScalar(ln.value)
@@ -109,11 +124,40 @@ func parseBlock(lines []rawLine, i *int, indent int) (map[string]interface{}, er
 			result[ln.key] = map[string]interface{}{}
 			continue
 		}
+		if lines[*i].listItem {
+			list, err := parseListBlock(lines, i, lines[*i].indent)
+			if err != nil {
+				return nil, err
+			}
+			result[ln.key] = list
+			continue
+		}
 		child, err := parseBlock(lines, i, lines[*i].indent)
 		if err != nil {
 			return nil, err
 		}
 		result[ln.key] = child
+	}
+	return result, nil
+}
+
+// parseListBlock consumes every consecutive list-item line ("- value") at
+// exactly the given indent and returns their scalar values in order.
+func parseListBlock(lines []rawLine, i *int, indent int) ([]interface{}, error) {
+	var result []interface{}
+	for *i < len(lines) {
+		ln := lines[*i]
+		if ln.indent < indent {
+			break
+		}
+		if ln.indent > indent {
+			return nil, fmt.Errorf("line %d: unexpected indentation", ln.num)
+		}
+		if !ln.listItem {
+			return nil, fmt.Errorf("line %d: expected a list item (\"- value\") or dedent, got %q", ln.num, ln.key)
+		}
+		*i++
+		result = append(result, parseScalar(ln.value))
 	}
 	return result, nil
 }
@@ -126,7 +170,7 @@ func parseScalar(s string) interface{} {
 		}
 	}
 	switch s {
-	case "null", "~":
+	case "", "null", "~":
 		return nil
 	case "true":
 		return true
