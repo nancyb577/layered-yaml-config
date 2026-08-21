@@ -31,7 +31,9 @@ cors_origins:
 
 Keys are plain strings, indentation defines nesting (spaces only, no
 tabs), and scalar values are typed automatically as bool, int, float,
-null, or string. Lines starting with `#` and blank lines are ignored.
+null, or string. Lines starting with `#` and blank lines are ignored,
+and a `#` after a value starts a trailing comment (`port: 8080 # prod`)
+unless it's inside a quoted string.
 
 Lists are block-style only (`- value`, one per line, indented under the
 key) and hold scalars, not nested maps or lists. Flow-style `{}`/`[]`,
@@ -91,6 +93,5 @@ $ go run ./cmd/yamlconf get config/base.yaml service.port
 ## Status
 
 This is early. The parser only handles the subset described above:
-maps, block-style scalar lists, and typed scalars. Inline comments after
-a value, quoted-string escape sequences, and env var interpolation
-(`${VAR}`) aren't handled yet.
+maps, block-style scalar lists, and typed scalars. Quoted-string escape
+sequences and env var interpolation (`${VAR}`) aren't handled yet.

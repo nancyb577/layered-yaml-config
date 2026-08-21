@@ -66,6 +66,7 @@ func readLines(r io.Reader) ([]rawLine, error) {
 			return nil, fmt.Errorf("line %d: tabs are not allowed for indentation", num)
 		}
 		indent := len(trimmed) - len(content)
+		content = strings.TrimRight(stripComment(content), " \t")
 		if content == "-" || strings.HasPrefix(content, "- ") {
 			value := strings.TrimSpace(content[1:])
 			lines = append(lines, rawLine{
@@ -160,6 +161,33 @@ func parseListBlock(lines []rawLine, i *int, indent int) ([]interface{}, error) 
 		result = append(result, parseScalar(ln.value))
 	}
 	return result, nil
+}
+
+// stripComment removes a trailing "# ..." comment from a line, honoring
+// quotes so a '#' inside a quoted scalar isn't mistaken for one. As in
+// YAML, a '#' only starts a comment at the start of the content or when
+// preceded by whitespace, so it doesn't break unquoted values like URLs
+// that happen to contain a '#'.
+func stripComment(s string) string {
+	inQuote := byte(0)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inQuote != 0 {
+			if c == inQuote {
+				inQuote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			inQuote = c
+		case '#':
+			if i == 0 || s[i-1] == ' ' || s[i-1] == '\t' {
+				return s[:i]
+			}
+		}
+	}
+	return s
 }
 
 func parseScalar(s string) interface{} {
