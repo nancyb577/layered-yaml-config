@@ -173,6 +173,10 @@ func stripComment(s string) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if inQuote != 0 {
+			if inQuote == '"' && c == '\\' && i+1 < len(s) {
+				i++
+				continue
+			}
 			if c == inQuote {
 				inQuote = 0
 			}
@@ -192,9 +196,13 @@ func stripComment(s string) string {
 
 func parseScalar(s string) interface{} {
 	if len(s) >= 2 {
-		quote := s[0]
-		if (quote == '"' || quote == '\'') && s[len(s)-1] == quote {
-			return s[1 : len(s)-1]
+		switch {
+		case s[0] == '"' && s[len(s)-1] == '"':
+			return unescapeDouble(s[1 : len(s)-1])
+		case s[0] == '\'' && s[len(s)-1] == '\'':
+			// Single-quoted YAML strings have no backslash escapes; a
+			// doubled quote is the only way to represent a literal one.
+			return strings.ReplaceAll(s[1:len(s)-1], "''", "'")
 		}
 	}
 	switch s {
@@ -212,4 +220,74 @@ func parseScalar(s string) interface{} {
 		return f
 	}
 	return s
+}
+
+// unescapeDouble processes the backslash escape sequences allowed inside a
+// double-quoted YAML scalar (the content passed in has already had its
+// surrounding quotes stripped). An unrecognized escape is passed through
+// with the backslash dropped, rather than treated as an error, since the
+// caller has no way to report one back through parseScalar.
+func unescapeDouble(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '\\' || i+1 >= len(s) {
+			b.WriteByte(c)
+			continue
+		}
+		next := s[i+1]
+		switch next {
+		case '\\', '"', '/':
+			b.WriteByte(next)
+			i++
+		case 'n':
+			b.WriteByte('\n')
+			i++
+		case 't':
+			b.WriteByte('\t')
+			i++
+		case 'r':
+			b.WriteByte('\r')
+			i++
+		case 'a':
+			b.WriteByte('\a')
+			i++
+		case 'b':
+			b.WriteByte('\b')
+			i++
+		case 'f':
+			b.WriteByte('\f')
+			i++
+		case 'v':
+			b.WriteByte('\v')
+			i++
+		case '0':
+			b.WriteByte(0)
+			i++
+		case 'x':
+			if i+4 <= len(s) {
+				if v, err := strconv.ParseUint(s[i+2:i+4], 16, 8); err == nil {
+					b.WriteByte(byte(v))
+					i += 3
+					continue
+				}
+			}
+			b.WriteByte(next)
+			i++
+		case 'u':
+			if i+6 <= len(s) {
+				if v, err := strconv.ParseUint(s[i+2:i+6], 16, 32); err == nil {
+					b.WriteRune(rune(v))
+					i += 5
+					continue
+				}
+			}
+			b.WriteByte(next)
+			i++
+		default:
+			b.WriteByte(next)
+			i++
+		}
+	}
+	return b.String()
 }
