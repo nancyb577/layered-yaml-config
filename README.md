@@ -98,5 +98,4 @@ $ go run ./cmd/yamlconf get config/base.yaml service.port
 
 This is early. The parser only handles the subset described above:
 maps, block-style scalar lists, typed scalars, and quoted-string
-escapes. Env var interpolation (`${VAR}`) isn't handled yet, and there
-are no unit tests yet either.
+escapes. Env var interpolation (`${VAR}`) isn't handled yet.
