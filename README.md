@@ -76,6 +76,27 @@ func main() {
 are merged key by key, and any other value in `override` replaces the
 base value outright.
 
+## Env var interpolation
+
+A string scalar can reference an environment variable with `${VAR}`:
+
+```yaml
+database:
+  host: db.internal
+  password: ${DB_PASSWORD}
+```
+
+`ExpandEnv(cfg)` walks a parsed map and substitutes each `${VAR}`
+reference with `os.LookupEnv(VAR)`, returning a new map. A `${VAR}` whose
+variable isn't set is an error rather than a silent empty string, named
+along with the dotted path of the value it appeared in (e.g.
+`database.password: environment variable "DB_PASSWORD" is not set`).
+`Expand(cfg, lookup)` takes a `func(string) (string, bool)` instead, for
+looking values up somewhere other than the environment.
+
+The CLI's `get` and `merge` subcommands call `ExpandEnv` on their result
+before printing it, so `${VAR}` works there without extra flags.
+
 ## CLI usage
 
 ```
@@ -98,4 +119,5 @@ $ go run ./cmd/yamlconf get config/base.yaml service.port
 
 This is early. The parser only handles the subset described above:
 maps, block-style scalar lists, typed scalars, and quoted-string
-escapes. Env var interpolation (`${VAR}`) isn't handled yet.
+escapes. There's no `validate` subcommand yet for checking a merged
+config against a schema.

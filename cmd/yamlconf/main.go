@@ -45,6 +45,10 @@ func runGet(args []string) error {
 	if err != nil {
 		return err
 	}
+	cfg, err = yamlconf.ExpandEnv(cfg)
+	if err != nil {
+		return err
+	}
 	val, ok := lookup(cfg, strings.Split(args[1], "."))
 	if !ok {
 		return fmt.Errorf("path %q not found", args[1])
@@ -67,6 +71,10 @@ func runMerge(args []string) error {
 			return err
 		}
 		result = yamlconf.Merge(result, layer)
+	}
+	result, err = yamlconf.ExpandEnv(result)
+	if err != nil {
+		return err
 	}
 	fmt.Print(yamlconf.Dump(result))
 	return nil
